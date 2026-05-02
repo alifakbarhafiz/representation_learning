@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Callable
+from typing import Callable, Optional
 
 import numpy as np
 import torch
@@ -12,11 +12,17 @@ from torchvision import transforms
 from configs.config import Config, set_global_seed
 
 
-def build_mae_feature_extractor(config: Config) -> Callable[[np.ndarray], np.ndarray]:
+def build_mae_feature_extractor(
+    config: Config,
+    model_name: Optional[str] = None,
+    batch_size: int = 256,
+) -> Callable[[np.ndarray], np.ndarray]:
     """Create a frozen MAE/ViT encoder feature extractor.
 
     Args:
         config: Experiment config containing MAE_MODEL_NAME and DEVICE.
+        model_name: Optional timm model name override. If None, uses config.MAE_MODEL_NAME.
+        batch_size: Inference batch size for feature extraction.
 
     Returns:
         extract_mae_features(images_numpy) -> numpy array (N, 768) for ViT-Base.
@@ -35,11 +41,12 @@ def build_mae_feature_extractor(config: Config) -> Callable[[np.ndarray], np.nda
         )
         raise
 
+    name = config.MAE_MODEL_NAME if model_name is None else str(model_name)
     try:
-        model = timm.create_model(config.MAE_MODEL_NAME, pretrained=True, num_classes=0)
+        model = timm.create_model(name, pretrained=True, num_classes=0)
     except Exception as e:  # pragma: no cover
         print(
-            f"[MAE] Error: failed to load pretrained model '{config.MAE_MODEL_NAME}'.\n"
+            f"[MAE] Error: failed to load pretrained model '{name}'.\n"
             "Make sure timm is installed and the model supports pretrained weights.\n"
             f"Original error: {e}"
         )
@@ -49,12 +56,6 @@ def build_mae_feature_extractor(config: Config) -> Callable[[np.ndarray], np.nda
     for p in model.parameters():
         p.requires_grad = False
     model.to(config.DEVICE)
-
-    preprocess = transforms.Compose(
-        [
-            transforms.Resize((224, 224)),
-        ]
-    )
 
     @torch.no_grad()
     def extract_mae_features(images_numpy: np.ndarray) -> np.ndarray:
@@ -73,31 +74,35 @@ def build_mae_feature_extractor(config: Config) -> Callable[[np.ndarray], np.nda
         if x.ndim != 4 or x.shape[1] != 1:
             raise ValueError("Expected images of shape (N,1,H,W) or (N,H,W).")
 
-        xt = torch.from_numpy(x)
-        # repeat grayscale -> 3ch
-        xt = xt.repeat(1, 3, 1, 1)
+        feats_out: list[np.ndarray] = []
+        for i in range(0, x.shape[0], int(batch_size)):
+            xb = x[i : i + int(batch_size)]
+            xt = torch.from_numpy(xb)
+            # repeat grayscale -> 3ch
+            xt = xt.repeat(1, 3, 1, 1)
+            # Resize to 224x224
+            xt = torch.nn.functional.interpolate(
+                xt, size=(224, 224), mode="bilinear", align_corners=False
+            )
+            xt = xt.to(config.DEVICE)
 
-        # Resize to 224x224
-        # torchvision transforms expect PIL or torch with CHW; for batch we apply interpolate
-        xt = torch.nn.functional.interpolate(xt, size=(224, 224), mode="bilinear", align_corners=False)
+            # timm ViT models expose forward_features; returns tokens (B, num_tokens, D)
+            if hasattr(model, "forward_features"):
+                feats = model.forward_features(xt)
+            else:  # pragma: no cover
+                raise RuntimeError("Loaded model does not expose forward_features().")
 
-        xt = xt.to(config.DEVICE)
+            # feats could be (B, D) or (B, T, D)
+            if feats.ndim == 3:
+                cls = feats[:, 0, :]
+            elif feats.ndim == 2:
+                cls = feats
+            else:  # pragma: no cover
+                raise RuntimeError(f"Unexpected features shape from model: {feats.shape}")
 
-        # timm ViT models expose forward_features; returns tokens (B, num_tokens, D)
-        if hasattr(model, "forward_features"):
-            feats = model.forward_features(xt)
-        else:  # pragma: no cover
-            raise RuntimeError("Loaded model does not expose forward_features().")
+            feats_out.append(cls.detach().cpu().numpy().astype(np.float32))
 
-        # feats could be (B, D) or (B, T, D)
-        if feats.ndim == 3:
-            cls = feats[:, 0, :]
-        elif feats.ndim == 2:
-            cls = feats
-        else:  # pragma: no cover
-            raise RuntimeError(f"Unexpected features shape from model: {feats.shape}")
-
-        return cls.detach().cpu().numpy().astype(np.float32)
+        return np.concatenate(feats_out, axis=0)
 
     # Quick smoke check to ensure feature dim is consistent
     _x = np.zeros((2, 1, 28, 28), dtype=np.float32)

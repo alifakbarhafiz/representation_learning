@@ -32,6 +32,13 @@ class Config:
     MLP_LR: float = 1e-3
 
     MAE_MODEL_NAME: str = "vit_base_patch16_224"
+    MAE_MODEL_NAMES: list[str] = field(
+        default_factory=lambda: [
+            "vit_base_patch16_224.mae",
+            "vit_large_patch16_224.mae",
+            "vit_huge_patch14_224.mae",
+        ]
+    )
 
     DEVICE: str = field(
         default_factory=lambda: "cuda" if torch.cuda.is_available() else "cpu"
