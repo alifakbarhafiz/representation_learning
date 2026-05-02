@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
 from configs.config import Config, set_global_seed
-from models.autoencoder import build_autoencoder, get_encoder
+from models.autoencoder import build_autoencoder_for_images, get_encoder
 
 
 def train_autoencoder(
@@ -31,7 +31,15 @@ def train_autoencoder(
     set_global_seed(config.SEED)
     device = config.DEVICE
 
-    build = build_autoencoder(config)
+    # Infer input shape from the loader (supports both images-only and (images, labels) loaders)
+    first_batch = next(iter(train_loader))
+    xb0 = first_batch[0] if isinstance(first_batch, (tuple, list)) else first_batch
+    if xb0.ndim != 4:
+        raise ValueError(f"Expected AE loader to yield 4D tensors, got shape {tuple(xb0.shape)}")
+    in_channels = int(xb0.shape[1])
+    input_size = int(xb0.shape[2])
+
+    build = build_autoencoder_for_images(config, in_channels=in_channels, input_size=input_size)
     model = build.autoencoder.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=config.AE_LR)
     criterion = nn.MSELoss()
@@ -87,7 +95,7 @@ def extract_ae_features(
     config: Config,
     batch_size: int = 256,
 ) -> np.ndarray:
-    """Extract AE latent features from images (N,1,28,28) -> (N, latent_dim)."""
+    """Extract AE latent features from images (N,C,H,W) -> (N, latent_dim)."""
 
     device = config.DEVICE
     encoder.eval()
@@ -95,6 +103,8 @@ def extract_ae_features(
     x = np.asarray(images_numpy, dtype=np.float32)
     if x.ndim == 3:
         x = x[:, None, :, :]
+    if x.ndim != 4:
+        raise ValueError(f"Expected images with shape (N,C,H,W), got {x.shape}")
     feats: list[np.ndarray] = []
     for i in range(0, len(x), batch_size):
         xb = torch.from_numpy(x[i : i + batch_size]).to(device)
@@ -129,7 +139,7 @@ if __name__ == "__main__":
 
     cfg = Config(DRY_RUN=True, AE_EPOCHS=2)
     set_global_seed(cfg.SEED)
-    x = torch.rand(200, 1, 28, 28)
+    x = torch.rand(200, 3, 224, 224)
     ds = TensorDataset(x)
     tl = DataLoader(ds, batch_size=32, shuffle=True)
     vl = DataLoader(ds, batch_size=32, shuffle=False)

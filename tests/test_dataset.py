@@ -28,7 +28,7 @@ def test_dry_run_test_size(dataset: tuple[dict, dict]) -> None:
 
 
 def test_pixel_values_normalized(dataset: tuple[dict, dict]) -> None:
-    """Flattened training pixels must live in [0, 1]."""
+    """Training pixels must live in [0, 1]."""
     _loaders, arrays_dict = dataset
     x_train = arrays_dict["train"][0]
     assert x_train.min() >= 0.0
@@ -36,10 +36,10 @@ def test_pixel_values_normalized(dataset: tuple[dict, dict]) -> None:
 
 
 def test_flat_array_shape(dataset: tuple[dict, dict]) -> None:
-    """Dry-run training features must be shaped (200, 784)."""
+    """Dry-run training images must be shaped (200, 1, 28, 28) in test fixture."""
     _loaders, arrays_dict = dataset
     x_train = arrays_dict["train"][0]
-    assert x_train.shape == (200, 784)
+    assert x_train.shape == (200, 1, 28, 28)
 
 
 def test_label_range(dataset: tuple[dict, dict]) -> None:

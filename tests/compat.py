@@ -18,8 +18,7 @@ def run_pca(
 ) -> dict:
     """Fit PCA on training data only and transform all splits (no leakage).
 
-    Accepts flattened (N, 784) arrays; reshapes internally to (N, 1, 28, 28)
-    before delegating to the implementation.
+    Accepts images shaped (N,C,H,W) and delegates to the implementation.
     """
 
     cfg = config
@@ -28,9 +27,9 @@ def run_pca(
 
         cfg = replace(config, PCA_N_COMPONENTS=n_components)
 
-    x_train_img = np.asarray(X_train, dtype=np.float32).reshape(-1, 1, 28, 28)
-    x_val_img = np.asarray(X_val, dtype=np.float32).reshape(-1, 1, 28, 28)
-    x_test_img = np.asarray(X_test, dtype=np.float32).reshape(-1, 1, 28, 28)
+    x_train_img = np.asarray(X_train, dtype=np.float32)
+    x_val_img = np.asarray(X_val, dtype=np.float32)
+    x_test_img = np.asarray(X_test, dtype=np.float32)
 
     feats, pca, fit_time, tsplit = fit_transform_pca(x_train_img, x_val_img, x_test_img, cfg)
     transform_time = float(sum(tsplit.values()))
@@ -51,9 +50,9 @@ def run_ae(
 ):
     """Train AE via images loaders and extract latent features."""
 
-    xt = arrays_dict["train"][0].reshape(-1, 1, 28, 28).astype(np.float32)
-    xv = arrays_dict["val"][0].reshape(-1, 1, 28, 28).astype(np.float32)
-    xs = arrays_dict["test"][0].reshape(-1, 1, 28, 28).astype(np.float32)
+    xt = np.asarray(arrays_dict["train"][0], dtype=np.float32)
+    xv = np.asarray(arrays_dict["val"][0], dtype=np.float32)
+    xs = np.asarray(arrays_dict["test"][0], dtype=np.float32)
 
     feats, hist, _model = train_and_extract_ae_representations(
         loaders_dict["train"],

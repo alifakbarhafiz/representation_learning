@@ -20,7 +20,7 @@ def fit_transform_pca(
     """Fit PCA on flattened *training* images and transform all splits.
 
     Args:
-        x_*_img: images in shape (N,1,28,28) float32 in [0,1]
+        x_*_img: images in shape (N,C,H,W) float32 in [0,1]
 
     Returns:
         features_dict: {'train','val','test'} -> (N, n_components)
@@ -64,9 +64,9 @@ def fit_transform_pca(
 
 if __name__ == "__main__":
     cfg = Config(DRY_RUN=True)
-    xtr = np.random.rand(200, 1, 28, 28).astype(np.float32)
-    xva = np.random.rand(50, 1, 28, 28).astype(np.float32)
-    xte = np.random.rand(50, 1, 28, 28).astype(np.float32)
+    xtr = np.random.rand(200, 3, 224, 224).astype(np.float32)
+    xva = np.random.rand(50, 3, 224, 224).astype(np.float32)
+    xte = np.random.rand(50, 3, 224, 224).astype(np.float32)
     feats, pca, fit_t, tt = fit_transform_pca(xtr, xva, xte, cfg)
     print({k: v.shape for k, v in feats.items()}, "fit", fit_t, "transform", tt)
 

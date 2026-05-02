@@ -1,8 +1,8 @@
-"""RetinaMNIST dataset loading and splitting.
+"""MedMNIST dataset loading and splitting.
 
 Provides:
   - PyTorch DataLoaders for training the autoencoder (images only)
-  - Flat numpy arrays for PCA and feature extraction
+  - Numpy arrays for PCA / feature extraction / MLP (images + labels)
 """
 
 from __future__ import annotations
@@ -44,42 +44,61 @@ def _project_root() -> str:
     return os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 
-def load_retinamnist(
+def _get_medmnist_class(dataset_name: str):
+    name = dataset_name.lower().strip()
+    try:
+        import medmnist  # type: ignore
+    except Exception as e:  # pragma: no cover
+        raise ImportError("Failed to import medmnist. Install with: pip install medmnist") from e
+
+    mapping = {
+        "dermamnist": getattr(medmnist, "DermaMNIST"),
+        "pathmnist": getattr(medmnist, "PathMNIST"),
+        "retinamnist": getattr(medmnist, "RetinaMNIST"),
+        "pneumoniamnist": getattr(medmnist, "PneumoniaMNIST"),
+    }
+    if name not in mapping:
+        raise ValueError(
+            f"Unknown dataset_name='{dataset_name}'. Expected one of: {sorted(mapping.keys())}"
+        )
+    return mapping[name]
+
+
+def load_medmnist(
     config: Config,
+    dataset_name: str | None = None,
     dry_run: bool | None = None,
     num_workers: int = 2,
 ) -> DatasetBundle:
-    """Load RetinaMNIST via medmnist and return loaders + numpy arrays.
+    """Load a MedMNIST dataset at the configured resolution.
 
-    Notes:
-      - Images normalized to [0, 1]
-      - Labels are ordinal with 5 classes
-      - If dry_run True: subsample to 200/50/50 for train/val/test
+    Args:
+        config: experiment configuration
+        dataset_name: one of {'dermamnist','pathmnist','retinamnist','pneumoniamnist'}.
+            If None, uses config.DATASET_NAME.
+        dry_run: if True, subsample to 200/50/50 (train/val/test)
+        num_workers: DataLoader workers
+
+    Returns:
+        DatasetBundle with:
+          - loaders: {'train','val','test'} images-only DataLoaders (Tensor[B,C,H,W])
+          - arrays: {'train','val','test'} -> (X_img, y) with X_img float32 [0,1] shaped (N,C,H,W)
     """
 
     set_global_seed(config.SEED)
     use_dry = config.DRY_RUN if dry_run is None else bool(dry_run)
+    ds_name = config.DATASET_NAME if dataset_name is None else str(dataset_name)
+    ds_cls = _get_medmnist_class(ds_name)
 
-    try:
-        from medmnist import RetinaMNIST
-    except Exception as e:  # pragma: no cover
-        raise ImportError(
-            "Failed to import medmnist. Install with: pip install medmnist"
-        ) from e
-
-    # Keep transforms minimal: medmnist can provide PIL/np; we enforce torch float in [0,1].
     root = os.path.join(_project_root(), "data_cache")
     os.makedirs(root, exist_ok=True)
 
     def _to_float_tensor(img: np.ndarray) -> torch.Tensor:
-        # img expected HxW or HxWxC uint8 in [0,255]
         arr = np.asarray(img)
         if arr.ndim == 2:
             arr = arr[:, :, None]
-        if arr.shape[-1] != 1:
-            arr = arr[:, :, :1]
+        # HWC -> CHW
         arr = arr.astype(np.float32) / 255.0
-        # torch expects CxHxW
         arr = np.transpose(arr, (2, 0, 1))
         return torch.from_numpy(arr)
 
@@ -96,9 +115,9 @@ def load_retinamnist(
             y = int(np.asarray(label).reshape(-1)[0])
             return x, y
 
-    train_ds = _TransformWrapper(RetinaMNIST(split="train", root=root, download=True))
-    val_ds = _TransformWrapper(RetinaMNIST(split="val", root=root, download=True))
-    test_ds = _TransformWrapper(RetinaMNIST(split="test", root=root, download=True))
+    train_ds = _TransformWrapper(ds_cls(split="train", root=root, download=True, size=config.DATASET_SIZE))
+    val_ds = _TransformWrapper(ds_cls(split="val", root=root, download=True, size=config.DATASET_SIZE))
+    test_ds = _TransformWrapper(ds_cls(split="test", root=root, download=True, size=config.DATASET_SIZE))
 
     if use_dry:
         train_ds = torch.utils.data.Subset(train_ds, list(range(min(200, len(train_ds)))))
@@ -106,31 +125,32 @@ def load_retinamnist(
         test_ds = torch.utils.data.Subset(test_ds, list(range(min(50, len(test_ds)))))
 
     # AE loaders (images only)
-    ae_train_loader = DataLoader(
-        _ImagesOnlyDataset(train_ds),
-        batch_size=config.BATCH_SIZE,
-        shuffle=True,
-        num_workers=num_workers,
-        pin_memory=(config.DEVICE == "cuda"),
-    )
-    ae_val_loader = DataLoader(
-        _ImagesOnlyDataset(val_ds),
-        batch_size=config.BATCH_SIZE,
-        shuffle=False,
-        num_workers=num_workers,
-        pin_memory=(config.DEVICE == "cuda"),
-    )
-    ae_test_loader = DataLoader(
-        _ImagesOnlyDataset(test_ds),
-        batch_size=config.BATCH_SIZE,
-        shuffle=False,
-        num_workers=num_workers,
-        pin_memory=(config.DEVICE == "cuda"),
-    )
+    loaders = {
+        "train": DataLoader(
+            _ImagesOnlyDataset(train_ds),
+            batch_size=config.BATCH_SIZE,
+            shuffle=True,
+            num_workers=num_workers,
+            pin_memory=(config.DEVICE == "cuda"),
+        ),
+        "val": DataLoader(
+            _ImagesOnlyDataset(val_ds),
+            batch_size=config.BATCH_SIZE,
+            shuffle=False,
+            num_workers=num_workers,
+            pin_memory=(config.DEVICE == "cuda"),
+        ),
+        "test": DataLoader(
+            _ImagesOnlyDataset(test_ds),
+            batch_size=config.BATCH_SIZE,
+            shuffle=False,
+            num_workers=num_workers,
+            pin_memory=(config.DEVICE == "cuda"),
+        ),
+    }
 
-    # Numpy arrays (flattened for PCA; also keep images as N x 1 x 28 x 28 for AE/MAE feature extraction)
     def _to_numpy_xy(ds: Dataset) -> Tuple[np.ndarray, np.ndarray]:
-        loader = DataLoader(ds, batch_size=512, shuffle=False, num_workers=0)
+        loader = DataLoader(ds, batch_size=256, shuffle=False, num_workers=0)
         xs, ys = [], []
         for xb, yb in loader:
             xs.append(xb.numpy())
@@ -143,13 +163,20 @@ def load_retinamnist(
     x_val, y_val = _to_numpy_xy(val_ds)
     x_test, y_test = _to_numpy_xy(test_ds)
 
-    loaders = {"train": ae_train_loader, "val": ae_val_loader, "test": ae_test_loader}
-    arrays = {
-        "train": (x_train, y_train),
-        "val": (x_val, y_val),
-        "test": (x_test, y_test),
-    }
+    arrays = {"train": (x_train, y_train), "val": (x_val, y_val), "test": (x_test, y_test)}
     return DatasetBundle(loaders=loaders, arrays=arrays)
+
+
+def load_retinamnist(
+    config: Config,
+    dry_run: bool | None = None,
+    num_workers: int = 2,
+) -> DatasetBundle:
+    """Backwards-compatible RetinaMNIST loader.
+
+    Prefer using `load_medmnist(..., dataset_name='retinamnist')` going forward.
+    """
+    return load_medmnist(config, dataset_name="retinamnist", dry_run=dry_run, num_workers=num_workers)
 
 
 def make_mlp_loader(
@@ -165,7 +192,7 @@ def make_mlp_loader(
 
 if __name__ == "__main__":
     cfg = Config(DRY_RUN=True)
-    bundle = load_retinamnist(cfg, dry_run=True, num_workers=0)
+    bundle = load_medmnist(cfg, dataset_name=cfg.DATASET_NAME, dry_run=True, num_workers=0)
     for split in ["train", "val", "test"]:
         x, y = bundle.arrays[split]
         print(split, x.shape, y.shape, "min/max", x.min(), x.max(), "classes", np.unique(y))

@@ -7,7 +7,6 @@ from typing import Callable, Optional
 
 import numpy as np
 import torch
-from torchvision import transforms
 
 from configs.config import Config, set_global_seed
 
@@ -62,28 +61,26 @@ def build_mae_feature_extractor(
         """Extract flattened CLS-token features from images.
 
         Accepts images shaped:
-          - (N, 1, 28, 28) float32 in [0,1]
-          - (N, 28, 28) float32 in [0,1]
+          - (N, C, 224, 224) float32 in [0,1], where C in {1,3}
         Returns:
           - (N, D) float32, where D is typically 768 for ViT-Base
         """
 
         x = np.asarray(images_numpy, dtype=np.float32)
-        if x.ndim == 3:
-            x = x[:, None, :, :]
-        if x.ndim != 4 or x.shape[1] != 1:
-            raise ValueError("Expected images of shape (N,1,H,W) or (N,H,W).")
+        if x.ndim != 4:
+            raise ValueError("Expected images of shape (N,C,224,224).")
+        if x.shape[2] != 224 or x.shape[3] != 224:
+            raise ValueError(f"Expected 224x224 inputs, got {x.shape[2]}x{x.shape[3]}.")
+        if x.shape[1] not in (1, 3):
+            raise ValueError(f"Expected C=1 or C=3, got C={x.shape[1]}.")
 
         feats_out: list[np.ndarray] = []
         for i in range(0, x.shape[0], int(batch_size)):
             xb = x[i : i + int(batch_size)]
             xt = torch.from_numpy(xb)
-            # repeat grayscale -> 3ch
-            xt = xt.repeat(1, 3, 1, 1)
-            # Resize to 224x224
-            xt = torch.nn.functional.interpolate(
-                xt, size=(224, 224), mode="bilinear", align_corners=False
-            )
+            if xt.shape[1] == 1:
+                # repeat grayscale -> 3ch
+                xt = xt.repeat(1, 3, 1, 1)
             xt = xt.to(config.DEVICE)
 
             # timm ViT models expose forward_features; returns tokens (B, num_tokens, D)
@@ -105,7 +102,7 @@ def build_mae_feature_extractor(
         return np.concatenate(feats_out, axis=0)
 
     # Quick smoke check to ensure feature dim is consistent
-    _x = np.zeros((2, 1, 28, 28), dtype=np.float32)
+    _x = np.zeros((2, 3, 224, 224), dtype=np.float32)
     _f = extract_mae_features(_x)
     if _f.ndim != 2:
         raise RuntimeError(f"MAE features should be 2D, got shape {_f.shape}")
@@ -116,6 +113,6 @@ if __name__ == "__main__":
     cfg = Config(DRY_RUN=True)
     t0 = time.time()
     extractor = build_mae_feature_extractor(cfg)
-    feats = extractor(np.random.rand(4, 1, 28, 28).astype(np.float32))
+    feats = extractor(np.random.rand(4, 3, 224, 224).astype(np.float32))
     print("Features:", feats.shape, "time:", time.time() - t0)
 

@@ -138,7 +138,7 @@ def test_extract_mae_features_output_shape(config: Config) -> None:
     stub = _vit_stub()
     with patch.object(timm, "create_model", return_value=stub):
         extract = mae_encoder_mod.build_mae_feature_extractor(config, model_name="vit_base_patch16_224.mae", batch_size=16)
-        feats = extract(np.zeros((32, 1, 28, 28), dtype=np.float32))
+        feats = extract(np.zeros((32, 1, 224, 224), dtype=np.float32))
         assert feats.shape == (32, 768)
 
 
@@ -150,7 +150,7 @@ def test_extract_mae_features_no_nan(config: Config) -> None:
     stub = _vit_stub()
     with patch.object(timm, "create_model", return_value=stub):
         extract = mae_encoder_mod.build_mae_feature_extractor(config, model_name="vit_base_patch16_224.mae", batch_size=16)
-        feats = extract(np.ones((17, 1, 28, 28), dtype=np.float32))
+        feats = extract(np.ones((17, 1, 224, 224), dtype=np.float32))
         assert int(np.isnan(feats).sum()) == 0
 
 

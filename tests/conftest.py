@@ -41,8 +41,9 @@ class _ImagesOnlyDataset(Dataset):
 
 
 def _make_synthetic_bundle(config: Config) -> tuple[dict, dict]:
-    """Create RetinaMNIST-like splits without network access."""
+    """Create small MedMNIST-like splits without network access."""
     rng = np.random.default_rng(42)
+    # Use 28x28 for unit tests to keep memory/time low; production runs use 224x224 via medmnist.
     x_train = rng.random((200, 1, 28, 28), dtype=np.float32)
     x_val = rng.random((50, 1, 28, 28), dtype=np.float32)
     x_test = rng.random((50, 1, 28, 28), dtype=np.float32)
@@ -77,9 +78,9 @@ def _make_synthetic_bundle(config: Config) -> tuple[dict, dict]:
     }
 
     arrays = {
-        "train": (x_train.reshape(200, 784).astype(np.float32), y_train.astype(np.int64)),
-        "val": (x_val.reshape(50, 784).astype(np.float32), y_val.astype(np.int64)),
-        "test": (x_test.reshape(50, 784).astype(np.float32), y_test.astype(np.int64)),
+        "train": (x_train.astype(np.float32), y_train.astype(np.int64)),
+        "val": (x_val.astype(np.float32), y_val.astype(np.int64)),
+        "test": (x_test.astype(np.float32), y_test.astype(np.int64)),
     }
     return loaders, arrays
 
@@ -120,6 +121,9 @@ def config() -> Config:
     base = Config()
     return replace(
         base,
+        DATASET_NAME="retinamnist",
+        DATASET_SIZE=28,
+        RESULTS_DIR="results",
         DRY_RUN=True,
         SEED=42,
         AE_EPOCHS=2,
@@ -139,7 +143,7 @@ def dataset(config: Config) -> tuple[dict, dict]:
 @pytest.fixture(scope="session")
 def autoencoder() -> ConvAutoencoder:
     """Untrained convolutional autoencoder."""
-    return ConvAutoencoder(latent_dim=128)
+    return ConvAutoencoder(latent_dim=128, in_channels=1, input_size=28)
 
 
 @pytest.fixture(scope="session")

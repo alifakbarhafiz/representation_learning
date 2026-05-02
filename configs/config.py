@@ -17,6 +17,10 @@ import torch
 class Config:
     """Experiment configuration container."""
 
+    DATASET_NAME: str = "retinamnist"
+    DATASET_SIZE: int = 224
+    RESULTS_DIR: str = "results"
+
     DRY_RUN: bool = False
     SEED: int = 42
     BATCH_SIZE: int = 64

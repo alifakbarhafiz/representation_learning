@@ -40,7 +40,7 @@ def test_no_data_leakage(dataset: tuple[dict, dict], config: Config, pca_feature
     X_train = arrays["train"][0].astype(np.float32)
     # Recompute using the same standalone API to emphasize train-only fit semantics.
     reran = run_pca(X_train, arrays["val"][0], arrays["test"][0], n_components=128, config=config)
-    assert np.allclose(reran["pca"].mean_, X_train.mean(axis=0))
+    assert np.allclose(reran["pca"].mean_, X_train.reshape(X_train.shape[0], -1).mean(axis=0))
 
 
 def test_fit_time_positive(pca_features: dict) -> None:

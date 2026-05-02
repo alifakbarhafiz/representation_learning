@@ -11,6 +11,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm.auto import tqdm
+from sklearn.utils.class_weight import compute_class_weight
 
 from configs.config import Config, set_global_seed
 
@@ -138,7 +139,21 @@ def train_mlp(
 
     model = MLPClassifier(in_dim, hidden_dims=config.MLP_HIDDEN_DIMS, num_classes=num_classes).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=config.MLP_LR)
-    criterion = nn.CrossEntropyLoss()
+
+    # Class imbalance handling (balanced weights from training labels)
+    classes = np.arange(int(num_classes), dtype=int)
+    try:
+        w = compute_class_weight(class_weight="balanced", classes=classes, y=ytr)
+    except Exception:
+        # Fallback: compute weights over observed classes only, then expand.
+        observed = np.unique(ytr).astype(int)
+        w_obs = compute_class_weight(class_weight="balanced", classes=observed, y=ytr)
+        w = np.ones((int(num_classes),), dtype=np.float32)
+        for c, wc in zip(observed.tolist(), w_obs.tolist()):
+            if 0 <= int(c) < int(num_classes):
+                w[int(c)] = float(wc)
+    weight_t = torch.tensor(w, dtype=torch.float32, device=device)
+    criterion = nn.CrossEntropyLoss(weight=weight_t)
 
     history: Dict[str, Any] = {
         "train_loss": [],
