@@ -58,6 +58,7 @@ class ConvDecoder(nn.Module):
 
     def __init__(self, bottleneck_channels: int, input_size: int, latent_dim: int, out_channels: int):
         super().__init__()
+        self.bottleneck_channels = int(bottleneck_channels)
         if input_size % 7 != 0:
             raise ValueError(f"input_size must be divisible by 7, got {input_size}")
         pools = int(np.log2(input_size // 7))
@@ -66,7 +67,7 @@ class ConvDecoder(nn.Module):
                 f"input_size must be 7 * 2^k (e.g., 28 or 224), got {input_size}"
             )
 
-        self.fc = nn.Linear(latent_dim, bottleneck_channels * 7 * 7)
+        self.fc = nn.Linear(latent_dim, self.bottleneck_channels * 7 * 7)
 
         # Mirror of encoder channel schedule (reverse conv blocks)
         channels = [32, 64, 128, 256, 512]
@@ -78,7 +79,7 @@ class ConvDecoder(nn.Module):
             chosen = chosen[:-1] + [bottleneck_channels]
 
         deconvs: list[nn.Module] = []
-        prev_c = bottleneck_channels
+        prev_c = self.bottleneck_channels
         for next_c in reversed(chosen[:-1]):
             deconvs.append(nn.ConvTranspose2d(prev_c, next_c, kernel_size=2, stride=2))
             deconvs.append(nn.ReLU(inplace=True))
@@ -99,7 +100,7 @@ class ConvDecoder(nn.Module):
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:
         h = self.fc(z)
-        h = h.view(h.size(0), 64, 7, 7)
+        h = h.view(h.size(0), self.bottleneck_channels, 7, 7)
         x_hat = self.deconv(h)
         return x_hat
 
