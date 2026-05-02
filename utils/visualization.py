@@ -89,8 +89,12 @@ def plot_reconstruction_samples(
 
     _ensure_dir(save_path)
     model.eval()
-    batch = next(iter(dataloader))
-    x = batch[0].to(device)[:n]
+    x = batch[0] if isinstance(batch, (tuple, list)) else batch
+    x = x.to(device)[:n]
+    if x.ndim == 3:  # (C,H,W) -> (1,C,H,W)
+        x = x.unsqueeze(0)
+    if x.ndim != 4:
+        raise ValueError(f"Expected images with shape (B,C,H,W), got {tuple(x.shape)}")
     recon = model(x).detach().cpu().numpy()
     x_np = x.detach().cpu().numpy()
 
