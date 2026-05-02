@@ -89,6 +89,8 @@ def plot_reconstruction_samples(
 
     _ensure_dir(save_path)
     model.eval()
+    batch = next(iter(dataloader)) 
+    
     x = batch[0] if isinstance(batch, (tuple, list)) else batch
     x = x.to(device)[:n]
     if x.ndim == 3:  # (C,H,W) -> (1,C,H,W)
