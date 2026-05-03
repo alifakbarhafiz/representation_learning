@@ -44,7 +44,14 @@ def train_autoencoder(
     optimizer = torch.optim.Adam(model.parameters(), lr=config.AE_LR)
     criterion = nn.MSELoss()
 
-    history: Dict[str, Any] = {"epoch_losses": [], "epoch_times": []}
+    history: Dict[str, Any] = {
+        # Backwards-compatible key (legacy)
+        "epoch_losses": [],
+        "epoch_times": [],
+        # New keys for JSON logging (one value per epoch)
+        "train_loss": [],
+        "val_loss": [],
+    }
 
     pbar = tqdm(range(1, config.AE_EPOCHS + 1), desc="AE training", leave=True)
     for _epoch in pbar:
@@ -68,6 +75,7 @@ def train_autoencoder(
         dt = time.time() - t0
         history["epoch_losses"].append(avg_loss)
         history["epoch_times"].append(dt)
+        history["train_loss"].append(float(avg_loss))
 
         # quick val loss (optional but useful for sanity)
         model.eval()
@@ -82,6 +90,7 @@ def train_autoencoder(
                 vloss += float(loss.item()) * bs
                 vn += bs
             vloss = vloss / max(1, vn)
+            history["val_loss"].append(float(vloss))
 
         pbar.set_postfix({"loss": f"{avg_loss:.4f}", "val": f"{vloss:.4f}", "t": f"{dt:.2f}s"})
 
@@ -123,14 +132,28 @@ def train_and_extract_ae_representations(
 ) -> Tuple[Dict[str, np.ndarray], Dict[str, Any], nn.Module]:
     """Train AE, then extract encoder features for all splits."""
 
+    t_train0 = time.time()
     model, history = train_autoencoder(train_loader, val_loader, config)
+    history["train_seconds"] = float(time.time() - t_train0)
     encoder = get_encoder(model)
 
-    features = {
-        "train": extract_ae_features(encoder, x_train_img, config),
-        "val": extract_ae_features(encoder, x_val_img, config),
-        "test": extract_ae_features(encoder, x_test_img, config),
-    }
+    extract_seconds: Dict[str, float] = {}
+
+    t0 = time.time()
+    ftr = extract_ae_features(encoder, x_train_img, config)
+    extract_seconds["train"] = float(time.time() - t0)
+
+    t1 = time.time()
+    fva = extract_ae_features(encoder, x_val_img, config)
+    extract_seconds["val"] = float(time.time() - t1)
+
+    t2 = time.time()
+    fte = extract_ae_features(encoder, x_test_img, config)
+    extract_seconds["test"] = float(time.time() - t2)
+
+    history["extract_seconds"] = extract_seconds
+
+    features = {"train": ftr, "val": fva, "test": fte}
     return features, history, model
 
 

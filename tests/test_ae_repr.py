@@ -34,7 +34,10 @@ def test_ae_test_feature_shape(ae_features: tuple[dict, dict]) -> None:
 def test_ae_history_keys(ae_features: tuple[dict, dict]) -> None:
     """AE trainer should expose loss/time traces."""
     _feats, hist = ae_features
-    assert set(hist.keys()) == {"epoch_losses", "epoch_times"}
+    required = {"epoch_losses", "epoch_times", "train_loss", "val_loss"}
+    assert required.issubset(set(hist.keys()))
+    assert "train_seconds" in hist
+    assert "extract_seconds" in hist
 
 
 def test_ae_history_length(config: Config, ae_features: tuple[dict, dict]) -> None:

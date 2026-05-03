@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Dict, Tuple
+from typing import Any, Dict, Tuple
 
 import numpy as np
 import torch
@@ -24,6 +24,7 @@ class DatasetBundle:
 
     loaders: Dict[str, DataLoader]
     arrays: Dict[str, Tuple[np.ndarray, np.ndarray]]  # split -> (X, y)
+    dataset_info: dict[str, Any] | None = None  # optional metadata for logging
 
 
 class _ImagesOnlyDataset(Dataset):
@@ -164,7 +165,60 @@ def load_medmnist(
     x_test, y_test = _to_numpy_xy(test_ds)
 
     arrays = {"train": (x_train, y_train), "val": (x_val, y_val), "test": (x_test, y_test)}
-    return DatasetBundle(loaders=loaders, arrays=arrays)
+
+    # Dataset info for logging (best-effort; does not affect training)
+    def _dist(y: np.ndarray) -> dict[str, int]:
+        y = np.asarray(y).astype(int).reshape(-1)
+        vals, counts = np.unique(y, return_counts=True)
+        return {str(int(v)): int(c) for v, c in zip(vals.tolist(), counts.tolist())}
+
+    # Determine num_classes from the union of observed labels across splits
+    all_labels = np.concatenate([y_train.reshape(-1), y_val.reshape(-1), y_test.reshape(-1)], axis=0)
+    classes = np.unique(all_labels.astype(int))
+    num_classes = int(classes.max() + 1) if classes.size else 0
+
+    # Try to read class names from medmnist.INFO if available
+    class_names: list[str] | None = None
+    try:  # pragma: no cover (depends on medmnist installation / INFO contents)
+        import medmnist  # type: ignore
+
+        info = getattr(medmnist, "INFO", None)
+        if isinstance(info, dict):
+            meta = info.get(ds_name.lower())
+            if isinstance(meta, dict):
+                label_map = meta.get("label")
+                if isinstance(label_map, dict):
+                    # label_map is often {str(idx): name}
+                    # Ensure deterministic order by integer key.
+                    items = []
+                    for k, v in label_map.items():
+                        try:
+                            ki = int(k)
+                        except Exception:
+                            continue
+                        items.append((ki, str(v)))
+                    items.sort(key=lambda t: t[0])
+                    if items:
+                        class_names = [name for _i, name in items]
+    except Exception:
+        class_names = None
+
+    dataset_info: dict[str, Any] = {
+        "num_classes": int(num_classes),
+        "class_names": class_names,
+        "split_sizes": {
+            "train": int(x_train.shape[0]),
+            "val": int(x_val.shape[0]),
+            "test": int(x_test.shape[0]),
+        },
+        "class_distribution": {
+            "train": _dist(y_train),
+            "val": _dist(y_val),
+            "test": _dist(y_test),
+        },
+    }
+
+    return DatasetBundle(loaders=loaders, arrays=arrays, dataset_info=dataset_info)
 
 
 def load_retinamnist(

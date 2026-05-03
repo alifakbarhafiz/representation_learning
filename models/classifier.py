@@ -19,7 +19,9 @@ from configs.config import Config, set_global_seed
 class MLPClassifier(nn.Module):
     """Configurable MLP classifier with BatchNorm and Dropout."""
 
-    def __init__(self, input_dim: int, hidden_dims: list[int], num_classes: int = 5):
+    def __init__(
+        self, input_dim: int, hidden_dims: list[int], num_classes: int = 5, dropout: float = 0.3
+    ):
         super().__init__()
         layers: list[nn.Module] = []
         prev = input_dim
@@ -29,7 +31,7 @@ class MLPClassifier(nn.Module):
                     nn.Linear(prev, h),
                     nn.BatchNorm1d(h),
                     nn.ReLU(inplace=True),
-                    nn.Dropout(0.3),
+                    nn.Dropout(float(dropout)),
                 ]
             )
             prev = h
@@ -137,7 +139,12 @@ def train_mlp(
     train_loader = _make_loader(xtr, ytr, config.BATCH_SIZE, shuffle=True)
     val_loader = _make_loader(xva, yva, config.BATCH_SIZE, shuffle=False)
 
-    model = MLPClassifier(in_dim, hidden_dims=config.MLP_HIDDEN_DIMS, num_classes=num_classes).to(device)
+    model = MLPClassifier(
+        in_dim,
+        hidden_dims=config.MLP_HIDDEN_DIMS,
+        num_classes=num_classes,
+        dropout=float(getattr(config, "MLP_DROPOUT", 0.3)),
+    ).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=config.MLP_LR)
 
     # Class imbalance handling (balanced weights from training labels)
@@ -161,8 +168,12 @@ def train_mlp(
         "train_acc": [],
         "val_acc": [],
         "epoch_times": [],
+        # new logging fields
+        "train_seconds": 0.0,
+        "class_weights": {str(i): float(wi) for i, wi in enumerate(w.tolist())},
     }
 
+    t_train0 = time.time()
     pbar = tqdm(range(1, config.MLP_EPOCHS + 1), desc="MLP training", leave=True)
     for _epoch in pbar:
         t0 = time.time()
@@ -186,6 +197,7 @@ def train_mlp(
             }
         )
 
+    history["train_seconds"] = float(time.time() - t_train0)
     return model, history
 
 

@@ -87,7 +87,11 @@ def test_train_mlp_history_keys(config: Config) -> None:
     yva = torch.randint(0, 5, (32,)).numpy().astype("int64")
 
     _model, hist = train_mlp(xtr, ytr, xva, yva, config)
-    assert set(hist.keys()) == {"train_loss", "val_loss", "train_acc", "val_acc", "epoch_times"}
+    # Core learning curves must remain present; additional logging keys are allowed.
+    required = {"train_loss", "val_loss", "train_acc", "val_acc", "epoch_times"}
+    assert required.issubset(set(hist.keys()))
+    assert "train_seconds" in hist
+    assert "class_weights" in hist
 
 
 def test_train_mlp_history_length(config: Config) -> None:

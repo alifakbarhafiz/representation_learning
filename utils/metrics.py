@@ -30,6 +30,39 @@ def compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, Any]:
     return {"accuracy": acc, "macro_f1": macro_f1, "per_class_acc": per_class_acc}
 
 
+def compute_metrics_for_split(
+    split: str, y_true: np.ndarray, y_pred: np.ndarray
+) -> dict[str, dict[str, Any]]:
+    """Compute metrics for a named split.
+
+    Returns:
+        { split: {accuracy, macro_f1, per_class_acc} }
+    """
+
+    return {str(split): compute_metrics(y_true, y_pred)}
+
+
+def compute_metrics_val_test(
+    y_val_true: np.ndarray,
+    y_val_pred: np.ndarray,
+    y_test_true: np.ndarray,
+    y_test_pred: np.ndarray,
+) -> dict[str, dict[str, Any]]:
+    """Compute metrics for both validation and test splits.
+
+    Returns:
+        {
+          "val":  {accuracy, macro_f1, per_class_acc},
+          "test": {accuracy, macro_f1, per_class_acc},
+        }
+    """
+
+    return {
+        "val": compute_metrics(y_val_true, y_val_pred),
+        "test": compute_metrics(y_test_true, y_test_pred),
+    }
+
+
 def print_metrics_table(results_dict: dict[str, dict[str, Any]]) -> None:
     """Pretty print method->metrics comparison table.
 
@@ -37,9 +70,25 @@ def print_metrics_table(results_dict: dict[str, dict[str, Any]]) -> None:
       - accuracy (float)
       - macro_f1 (float)
       - optional: train_time (float), feature_time (float)
+
+    Pass a mapping **method_name -> metrics_dict**, e.g. ``{"pca": compute_metrics(...)}``
+    or the full ``EVAL`` dict after evaluating all runs. Do not pass a single
+    ``compute_metrics`` return value directly — wrap it::
+        print_metrics_table({"pca": metrics_dict})
     """
 
+    if not isinstance(results_dict, dict) or not results_dict:
+        print("(empty metrics)")
+        return
+
     methods = list(results_dict.keys())
+    for mk, mv in results_dict.items():
+        if not isinstance(mv, dict):
+            raise TypeError(
+                "print_metrics_table expects dict[str, dict] (method name -> metrics from compute_metrics). "
+                f"For key {mk!r}, got {type(mv).__name__}. Example: "
+                'print_metrics_table({"pca": compute_metrics(...)})'
+            )
     headers = ["Method", "Test Acc", "Macro F1", "Train Time", "Feature Time"]
     rows: list[list[str]] = []
 

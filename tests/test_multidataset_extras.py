@@ -9,7 +9,7 @@ import pytest
 import torch
 
 from models.classifier import train_mlp
-from utils.io import save_json
+from utils.io import collect_environment, save_json
 
 
 def test_save_json_writes_file(tmp_path) -> None:
@@ -31,6 +31,14 @@ def test_train_mlp_uses_weighted_loss_runs(config) -> None:
     model, hist = train_mlp(xtr, ytr, xva, yva, config, input_dim=16, num_classes=2)
     assert hasattr(model, "forward")
     assert len(hist["train_loss"]) == config.MLP_EPOCHS
+    assert isinstance(hist.get("class_weights"), dict)
+    assert float(hist.get("train_seconds", 0.0)) >= 0.0
+
+
+def test_collect_environment_has_required_keys() -> None:
+    env = collect_environment()
+    for k in ["python_version", "torch_version", "timm_version", "medmnist_version", "cuda_version"]:
+        assert k in env
 
 
 def test_mae_grayscale_repeats_channel_to_three(config) -> None:

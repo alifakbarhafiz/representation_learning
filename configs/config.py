@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import os
 import random
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 
 import numpy as np
 import torch
@@ -34,6 +34,7 @@ class Config:
     MLP_HIDDEN_DIMS: list[int] = field(default_factory=lambda: [256, 128])
     MLP_EPOCHS: int = 50
     MLP_LR: float = 1e-3
+    MLP_DROPOUT: float = 0.3
 
     MAE_MODEL_NAME: str = "vit_base_patch16_224"
     MAE_MODEL_NAMES: list[str] = field(
@@ -47,6 +48,11 @@ class Config:
     DEVICE: str = field(
         default_factory=lambda: "cuda" if torch.cuda.is_available() else "cpu"
     )
+
+    def to_dict(self) -> dict:
+        """Serialize config for experiment logging."""
+
+        return dict(asdict(self))
 
 
 def set_global_seed(seed: int) -> None:
